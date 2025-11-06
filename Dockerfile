@@ -1,0 +1,12 @@
+# Imagen oficial con PHP 8.4 + Apache
+FROM php:8.4-apache
+
+# Instalación opcional de utilidades y Composer para futuras demos
+RUN set -eux; \
+	apt-get update; \
+	apt-get install -y --no-install-recommends git unzip curl ca-certificates; \
+	rm -rf /var/lib/apt/lists/*; \
+	curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer; \
+	chmod +x /usr/local/bin/composer
+
+WORKDIR /var/www/html
