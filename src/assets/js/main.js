@@ -15,6 +15,15 @@ const nodoBotonAgregarUsuario = document.getElementById(
   "boton-agregar-usuario"
 );
 const nodoIndicadorCargando = document.getElementById("indicador-cargando");
+// index hidden
+const campoIndex = document.getElementById("campo-index");
+// cancel btn
+const nodoBotonCancelarEdicion = document.getElementById(
+  "boton-cancelar-edicion"
+);
+
+// editIndex: null=create
+let estadoEdicion = null;
 
 // -----------------------------------------------------------------------------
 // BLOQUE: Gestión de mensajes de estado (éxito / error)
@@ -71,17 +80,15 @@ function renderizarTablaDeUsuarios(arrayUsuarios) {
 
   arrayUsuarios.forEach((usuario, posicionEnLista) => {
     const nodoFila = document.createElement("tr");
+  // row actions
     nodoFila.innerHTML = ` 
       <td>${posicionEnLista + 1}</td> 
       <td>${convertirATextoSeguro(usuario?.nombre ?? "")}</td> 
       <td>${convertirATextoSeguro(usuario?.email ?? "")}</td> 
-      <td> 
-        <button           type="button" 
-          data-posicion="${posicionEnLista}" 
-          aria-label="Eliminar usuario ${posicionEnLista + 1}"> 
-          Eliminar 
-        </button> 
-      </td> 
+      <td>
+        <button type="button" data-posicion="${posicionEnLista}" data-editar aria-label="Editar usuario ${posicionEnLista + 1}">Editar</button>
+        <button type="button" data-posicion="${posicionEnLista}" data-eliminar aria-label="Eliminar usuario ${posicionEnLista + 1}">Eliminar</button>
+      </td>
     `;
     nodoCuerpoTablaUsuarios.appendChild(nodoFila);
   });
@@ -128,20 +135,46 @@ formularioAltaUsuario?.addEventListener("submit", async (evento) => {
   try {
     activarEstadoCargando();
 
-    const respuestaHttp = await fetch(`${URL_API_SERVIDOR}?action=create`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(datosUsuarioNuevo),
-    });
-    const cuerpoJson = await respuestaHttp.json();
+    // create or update
+    if (estadoEdicion === null) {
+      // create
+      const respuestaHttp = await fetch(`${URL_API_SERVIDOR}?action=create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(datosUsuarioNuevo),
+      });
+      const cuerpoJson = await respuestaHttp.json();
 
-    if (!cuerpoJson.ok) {
-      throw new Error(cuerpoJson.error || "No fue posible crear el usuario.");
+      if (!cuerpoJson.ok) {
+        throw new Error(cuerpoJson.error || "No fue posible crear el usuario.");
+      }
+
+      renderizarTablaDeUsuarios(cuerpoJson.data);
+      formularioAltaUsuario.reset();
+      mostrarMensajeDeEstado("ok", "Usuario agregado correctamente.");
+    } else {
+      // update
+      const indiceEditar = estadoEdicion;
+      const payload = { index: indiceEditar, nombre: datosUsuarioNuevo.nombre, email: datosUsuarioNuevo.email };
+      const respuestaHttp = await fetch(`${URL_API_SERVIDOR}?action=update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const cuerpoJson = await respuestaHttp.json();
+
+      if (!cuerpoJson.ok) {
+        throw new Error(cuerpoJson.error || "No fue posible actualizar el usuario.");
+      }
+
+      renderizarTablaDeUsuarios(cuerpoJson.data);
+      formularioAltaUsuario.reset();
+      estadoEdicion = null;
+      if (campoIndex) campoIndex.value = "";
+      if (nodoBotonAgregarUsuario) nodoBotonAgregarUsuario.textContent = "Agregar usuario";
+      if (nodoBotonCancelarEdicion) nodoBotonCancelarEdicion.hidden = true;
+      mostrarMensajeDeEstado("ok", "Usuario actualizado correctamente.");
     }
-
-    renderizarTablaDeUsuarios(cuerpoJson.data);
-    formularioAltaUsuario.reset();
-    mostrarMensajeDeEstado("ok", "Usuario agregado correctamente.");
   } catch (error) {
     mostrarMensajeDeEstado("error", error.message);
   } finally {
@@ -152,8 +185,33 @@ formularioAltaUsuario?.addEventListener("submit", async (evento) => {
 // -----------------------------------------------------------------------------
 // BLOQUE: Eliminación de usuario (POST delete) mediante delegación
 // -----------------------------------------------------------------------------
+// handle row actions
 nodoCuerpoTablaUsuarios?.addEventListener("click", async (evento) => {
-  const nodoBotonEliminar = evento.target.closest("button[data-posicion]");
+  // Editar
+  const nodoBotonEditar = evento.target.closest("button[data-editar]");
+  if (nodoBotonEditar) {
+    const idx = parseInt(nodoBotonEditar.dataset.posicion, 10);
+    if (!Number.isInteger(idx)) return;
+
+  // populate form
+    const filas = nodoCuerpoTablaUsuarios.querySelectorAll("tr");
+    const fila = filas[idx];
+    // Intentamos recuperar los datos desde la fila (nombre, email)
+    const celdas = fila ? fila.querySelectorAll("td") : [];
+    const nombre = celdas[1] ? celdas[1].textContent.trim() : "";
+    const email = celdas[2] ? celdas[2].textContent.trim() : "";
+
+    formularioAltaUsuario.querySelector('[name="nombre"]').value = nombre;
+    formularioAltaUsuario.querySelector('[name="email"]').value = email;
+    if (campoIndex) campoIndex.value = String(idx);
+    estadoEdicion = idx;
+    if (nodoBotonAgregarUsuario) nodoBotonAgregarUsuario.textContent = "Guardar cambios";
+    if (nodoBotonCancelarEdicion) nodoBotonCancelarEdicion.hidden = false;
+    return;
+  }
+
+  // Eliminar
+  const nodoBotonEliminar = evento.target.closest("button[data-eliminar]");
   if (!nodoBotonEliminar) return;
 
   const posicionUsuarioAEliminar = parseInt(
@@ -183,6 +241,15 @@ nodoCuerpoTablaUsuarios?.addEventListener("click", async (evento) => {
   } catch (error) {
     mostrarMensajeDeEstado("error", error.message);
   }
+});
+
+// cancel edit
+nodoBotonCancelarEdicion?.addEventListener("click", (e) => {
+  formularioAltaUsuario.reset();
+  estadoEdicion = null;
+  if (campoIndex) campoIndex.value = "";
+  if (nodoBotonAgregarUsuario) nodoBotonAgregarUsuario.textContent = "Agregar usuario";
+  if (nodoBotonCancelarEdicion) nodoBotonCancelarEdicion.hidden = true;
 });
 
 // -----------------------------------------------------------------------------

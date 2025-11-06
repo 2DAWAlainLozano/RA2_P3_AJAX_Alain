@@ -159,6 +159,64 @@ if (($metodoHttpRecibido === 'POST' || $metodoHttpRecibido === 'DELETE') && $acc
     responder_json_exito($listaUsuarios); // 200 OK 
 }
 
+// update user (POST action=update)
+// body: { index, nombre, email }
+if ($metodoHttpRecibido === 'POST' && $accionSolicitada === 'update') {
+    // parse body
+    $cuerpoBruto = (string) file_get_contents('php://input');
+    $datosDecodificados = $cuerpoBruto !== '' ? (json_decode($cuerpoBruto, true) ?? []) : [];
+
+    $indice = isset($datosDecodificados['index']) ? (int) $datosDecodificados['index'] : null;
+    $nombreNuevo = trim((string) ($datosDecodificados['nombre'] ?? $_POST['nombre'] ?? ''));
+    $emailNuevo = trim((string) ($datosDecodificados['email'] ?? $_POST['email'] ?? ''));
+    $emailNormalizado = mb_strtolower($emailNuevo);
+
+    // validate index
+    if ($indice === null || !is_int($indice)) {
+        responder_json_error('Falta el parámetro "index" para actualizar.', 422);
+    }
+
+    if (!isset($listaUsuarios[$indice])) {
+        responder_json_error('El índice indicado no existe.', 404);
+    }
+
+    // validate fields
+    if ($nombreNuevo === '' || $emailNuevo === '') {
+        responder_json_error('Los campos "nombre" y "email" son obligatorios.', 422);
+    }
+    if (!filter_var($emailNuevo, FILTER_VALIDATE_EMAIL)) {
+        responder_json_error('El campo "email" no tiene un formato válido.', 422);
+    }
+
+    if (mb_strlen($nombreNuevo) > 60) {
+        responder_json_error('El campo "nombre" excede los 60 caracteres.', 422);
+    }
+    if (mb_strlen($emailNuevo) > 120) {
+        responder_json_error('El campo "email" excede los 120 caracteres.', 422);
+    }
+
+    // check duplicate
+    foreach ($listaUsuarios as $idx => $u) {
+        if ($idx === $indice) continue;
+        if (isset($u['email']) && is_string($u['email']) && mb_strtolower($u['email']) === $emailNormalizado) {
+            responder_json_error('Ya existe un usuario con ese email.', 409);
+        }
+    }
+
+    // update & persist
+    $listaUsuarios[$indice] = [
+        'nombre' => $nombreNuevo,
+        'email' => $emailNormalizado,
+    ];
+
+    file_put_contents(
+        $rutaArchivoDatosJson,
+        json_encode($listaUsuarios, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n"
+    );
+
+    responder_json_exito($listaUsuarios);
+}
+
 // 7) Si llegamos aquí, la acción solicitada no está soportada 
 responder_json_error('Acción no soportada. Use list | create | delete', 400); 
 
