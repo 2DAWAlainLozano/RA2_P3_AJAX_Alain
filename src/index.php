@@ -16,7 +16,7 @@ declare(strict_types=1);
 <body> 
     <h1>Mini CRUD en JSON (sin Base de Datos) — Parte 1</h1> 
     <p>Servidor PHP 8.4 funcionando dentro de Docker.</p> 
-    <p><a href="/index_ajax.html">Ir a Parte 2 (AJAX con fetch)</a></p> 
+    <p><a href="/public/index_ajax.html">Ir a Parte 2 (AJAX con fetch)</a></p>
 </body> 
  
 </html> 
