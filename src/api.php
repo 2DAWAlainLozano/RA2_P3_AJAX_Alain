@@ -66,7 +66,8 @@ $accionSolicitada = $_GET['action'] ?? $_POST['action'] ?? 'list';
 
 // 4) LISTAR usuarios: GET /api.php?action=list 
 if ($metodoHttpRecibido === 'GET' && $accionSolicitada === 'list') { 
-    responder_json_exito($listaUsuarios); // 200 OK 
+    // No devolvemos las contraseñas (hashes) al cliente
+    responder_json_exito(sanitizarUsuarios($listaUsuarios)); // 200 OK 
 }
 
 // 5) CREAR usuario: POST /api.php?action=create 
@@ -79,13 +80,17 @@ if ($metodoHttpRecibido === 'POST' && $accionSolicitada === 'create') {
  
     // Extraemos datos y normalizamos 
     $nombreUsuarioNuevo = trim((string) ($datosDecodificados['nombre'] ?? $_POST['nombre'] ?? '')); 
-    $correoUsuarioNuevo = trim((string) ($datosDecodificados['email']  ?? $_POST['email']  ?? '')); 
+    $correoUsuarioNuevo = trim((string) ($datosDecodificados['email']  ?? $_POST['email']  ?? ''));
+    $contrasenaPlano = (string) ($datosDecodificados['password'] ?? $_POST['password'] ?? '');
     $correoUsuarioNormalizado = mb_strtolower($correoUsuarioNuevo); 
  
     // Validación mínima en servidor 
     if ($nombreUsuarioNuevo === '' || $correoUsuarioNuevo === '') { 
         responder_json_error('Los campos "nombre" y "email" son obligatorios.', 422); 
     } 
+    if ($contrasenaPlano === '') {
+        responder_json_error('El campo "password" es obligatorio.', 422);
+    }
     if (!filter_var($correoUsuarioNuevo, FILTER_VALIDATE_EMAIL)) { 
         responder_json_error('El campo "email" no tiene un formato válido.', 422); 
     } 
@@ -97,16 +102,21 @@ if ($metodoHttpRecibido === 'POST' && $accionSolicitada === 'create') {
     if (mb_strlen($correoUsuarioNuevo) > 120) { 
         responder_json_error('El campo "email" excede los 120 caracteres.', 422); 
     } 
+    if (mb_strlen($contrasenaPlano) < 6) {
+        responder_json_error('El campo "password" debe tener al menos 6 caracteres.', 422);
+    }
  
     // Evitar duplicados por email 
     if (existeEmailDuplicado($listaUsuarios, $correoUsuarioNormalizado)) { 
         responder_json_error('Ya existe un usuario con ese email.', 409); 
     } 
  
-    // Agregamos y persistimos (guardamos el email normalizado) 
+    // Hasheamos la contraseña y almacenamos usuario
+    $hashPassword = password_hash($contrasenaPlano, PASSWORD_DEFAULT);
     $listaUsuarios[] = [ 
         'nombre' => $nombreUsuarioNuevo, 
         'email'  => $correoUsuarioNormalizado, 
+        'password' => $hashPassword,
     ]; 
  
     file_put_contents( 
@@ -114,7 +124,7 @@ if ($metodoHttpRecibido === 'POST' && $accionSolicitada === 'create') {
         json_encode($listaUsuarios, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n" 
     ); 
  
-    responder_json_exito($listaUsuarios, 201); 
+    responder_json_exito(sanitizarUsuarios($listaUsuarios), 201); 
 }
 
 // 6) ELIMINAR usuario: POST /api.php?action=delete 
@@ -156,7 +166,7 @@ if (($metodoHttpRecibido === 'POST' || $metodoHttpRecibido === 'DELETE') && $acc
         json_encode($listaUsuarios, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n" 
     ); 
     // 6.5) Devolvemos el listado actualizado 
-    responder_json_exito($listaUsuarios); // 200 OK 
+    responder_json_exito(sanitizarUsuarios($listaUsuarios)); // 200 OK 
 }
 
 // update user (POST action=update)
@@ -169,6 +179,7 @@ if ($metodoHttpRecibido === 'POST' && $accionSolicitada === 'update') {
     $indice = isset($datosDecodificados['index']) ? (int) $datosDecodificados['index'] : null;
     $nombreNuevo = trim((string) ($datosDecodificados['nombre'] ?? $_POST['nombre'] ?? ''));
     $emailNuevo = trim((string) ($datosDecodificados['email'] ?? $_POST['email'] ?? ''));
+    $contrasenaPlano = isset($datosDecodificados['password']) ? (string) $datosDecodificados['password'] : (isset($_POST['password']) ? (string) $_POST['password'] : '');
     $emailNormalizado = mb_strtolower($emailNuevo);
 
     // validate index
@@ -203,10 +214,20 @@ if ($metodoHttpRecibido === 'POST' && $accionSolicitada === 'update') {
         }
     }
 
-    // update & persist
+    // update (si no se proporciona password, conservamos la existente)
+    $usuarioExistente = $listaUsuarios[$indice];
+    $nuevoHash = $usuarioExistente['password'] ?? '';
+    if ($contrasenaPlano !== '') {
+        if (mb_strlen($contrasenaPlano) < 6) {
+            responder_json_error('El campo "password" debe tener al menos 6 caracteres.', 422);
+        }
+        $nuevoHash = password_hash($contrasenaPlano, PASSWORD_DEFAULT);
+    }
+
     $listaUsuarios[$indice] = [
         'nombre' => $nombreNuevo,
         'email' => $emailNormalizado,
+        'password' => $nuevoHash,
     ];
 
     file_put_contents(
@@ -214,7 +235,43 @@ if ($metodoHttpRecibido === 'POST' && $accionSolicitada === 'update') {
         json_encode($listaUsuarios, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n"
     );
 
-    responder_json_exito($listaUsuarios);
+    responder_json_exito(sanitizarUsuarios($listaUsuarios));
+}
+
+// LOGIN: POST /api.php?action=login  body: { email, password }
+if ($metodoHttpRecibido === 'POST' && $accionSolicitada === 'login') {
+    $cuerpoBruto = (string) file_get_contents('php://input');
+    $datosDecodificados = $cuerpoBruto !== '' ? (json_decode($cuerpoBruto, true) ?? []) : [];
+    $email = trim((string) ($datosDecodificados['email'] ?? $_POST['email'] ?? ''));
+    $password = (string) ($datosDecodificados['password'] ?? $_POST['password'] ?? '');
+    $emailNormalizado = mb_strtolower($email);
+
+    if ($email === '' || $password === '') {
+        responder_json_error('Email y password son obligatorios.', 422);
+    }
+
+    // buscar usuario
+    $usuarioEncontrado = null;
+    foreach ($listaUsuarios as $u) {
+        if (isset($u['email']) && is_string($u['email']) && mb_strtolower($u['email']) === $emailNormalizado) {
+            $usuarioEncontrado = $u;
+            break;
+        }
+    }
+
+    if ($usuarioEncontrado === null) {
+        responder_json_error('Credenciales incorrectas.', 401);
+    }
+
+    $hashAlmacenado = $usuarioEncontrado['password'] ?? '';
+    if (!is_string($hashAlmacenado) || $hashAlmacenado === '' || !password_verify($password, $hashAlmacenado)) {
+        responder_json_error('Credenciales incorrectas.', 401);
+    }
+
+    // OK: devolvemos usuario sin password
+    $usuarioSaneado = $usuarioEncontrado;
+    unset($usuarioSaneado['password']);
+    responder_json_exito($usuarioSaneado);
 }
 
 // 7) Si llegamos aquí, la acción solicitada no está soportada 
@@ -235,3 +292,24 @@ $emailNormalizado) {
     } 
     return false; 
 } 
+
+/**
+ * Devuelve una copia de la lista de usuarios sin el campo 'password' para
+ * no exponer hashes al cliente.
+ *
+ * @param array $usuarios
+ * @return array
+ */
+function sanitizarUsuarios(array $usuarios): array {
+    $out = [];
+    foreach ($usuarios as $u) {
+        if (is_array($u)) {
+            $v = $u;
+            // indicamos si el usuario tiene password configurada (no devolvemos el hash)
+            $v['hasPassword'] = isset($u['password']) && $u['password'] !== '';
+            if (isset($v['password'])) unset($v['password']);
+            $out[] = $v;
+        }
+    }
+    return $out;
+}

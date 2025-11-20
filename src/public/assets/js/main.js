@@ -10,6 +10,7 @@ const URL_API_SERVIDOR = "/api.php";
 const nodoCuerpoTablaUsuarios = document.getElementById("tbody"); // <tbody> del listado
 const nodoFilaEstadoVacio = document.getElementById("fila-estado-vacio"); // fila de “no hay datos”
 const formularioAltaUsuario = document.getElementById("formCreate"); // <form> de alta
+const nodoCampoPassword = document.getElementById("campo-password"); // password input
 const nodoZonaMensajesEstado = document.getElementById("msg"); // <div> mensajes
 const nodoBotonAgregarUsuario = document.getElementById(
   "boton-agregar-usuario"
@@ -85,6 +86,7 @@ function renderizarTablaDeUsuarios(arrayUsuarios) {
       <td>${posicionEnLista + 1}</td> 
       <td>${convertirATextoSeguro(usuario?.nombre ?? "")}</td> 
       <td>${convertirATextoSeguro(usuario?.email ?? "")}</td> 
+      <td>${usuario?.hasPassword ? 'Sí' : 'No'}</td> 
       <td>
         <button type="button" data-posicion="${posicionEnLista}" data-editar aria-label="Editar usuario ${posicionEnLista + 1}">Editar</button>
         <button type="button" data-posicion="${posicionEnLista}" data-eliminar aria-label="Eliminar usuario ${posicionEnLista + 1}">Eliminar</button>
@@ -121,6 +123,7 @@ formularioAltaUsuario?.addEventListener("submit", async (evento) => {
   const datosUsuarioNuevo = {
     nombre: String(datosFormulario.get("nombre") || "").trim(),
     email: String(datosFormulario.get("email") || "").trim(),
+    password: String(datosFormulario.get("password") || ""),
   };
 
   // Validación HTML5 rápida (por si el navegador no la lanza)
@@ -138,10 +141,17 @@ formularioAltaUsuario?.addEventListener("submit", async (evento) => {
     // create or update
     if (estadoEdicion === null) {
       // create
+      // require password for creation
+      const payloadCreate = { nombre: datosUsuarioNuevo.nombre, email: datosUsuarioNuevo.email, password: datosUsuarioNuevo.password };
+      if (!payloadCreate.password || payloadCreate.password.length < 6) {
+        throw new Error('El campo "password" es obligatorio y debe tener al menos 6 caracteres.');
+      }
+      console.debug('create payload', payloadCreate);
+
       const respuestaHttp = await fetch(`${URL_API_SERVIDOR}?action=create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(datosUsuarioNuevo),
+        body: JSON.stringify(payloadCreate),
       });
       const cuerpoJson = await respuestaHttp.json();
 
@@ -155,7 +165,11 @@ formularioAltaUsuario?.addEventListener("submit", async (evento) => {
     } else {
       // update
       const indiceEditar = estadoEdicion;
+      // password is optional on update; include only if provided
       const payload = { index: indiceEditar, nombre: datosUsuarioNuevo.nombre, email: datosUsuarioNuevo.email };
+      if (datosUsuarioNuevo.password && datosUsuarioNuevo.password.length >= 6) payload.password = datosUsuarioNuevo.password;
+      console.debug('update payload', payload);
+
       const respuestaHttp = await fetch(`${URL_API_SERVIDOR}?action=update`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -203,6 +217,8 @@ nodoCuerpoTablaUsuarios?.addEventListener("click", async (evento) => {
 
     formularioAltaUsuario.querySelector('[name="nombre"]').value = nombre;
     formularioAltaUsuario.querySelector('[name="email"]').value = email;
+    // never populate password field with hash; keep empty so user can set a new one if desired
+    if (nodoCampoPassword) nodoCampoPassword.value = '';
     if (campoIndex) campoIndex.value = String(idx);
     estadoEdicion = idx;
     if (nodoBotonAgregarUsuario) nodoBotonAgregarUsuario.textContent = "Guardar cambios";
@@ -250,6 +266,7 @@ nodoBotonCancelarEdicion?.addEventListener("click", (e) => {
   if (campoIndex) campoIndex.value = "";
   if (nodoBotonAgregarUsuario) nodoBotonAgregarUsuario.textContent = "Agregar usuario";
   if (nodoBotonCancelarEdicion) nodoBotonCancelarEdicion.hidden = true;
+  if (nodoCampoPassword) nodoCampoPassword.value = '';
 });
 
 // -----------------------------------------------------------------------------

@@ -1,3 +1,7 @@
+<?php
+require_once __DIR__ . '/../auth.php';
+require_role('admin');
+?>
 <!DOCTYPE html>
 <html lang="es">
   <head>
@@ -17,6 +21,7 @@
         Esta pantalla usa JavaScript para hablar con la API PHP y actualizar la
         tabla sin recargar la página.
       </p>
+      <p>Hola, <?= htmlspecialchars($_SESSION['user']['nombre']) ?> (Admin). <a href="Logout.php">Cerrar Sesión</a></p>
     </header>
 
     <main class="zona-principal" id="zona-principal" tabindex="-1">
@@ -70,6 +75,19 @@
             />
           </div>
 
+          <div class="form-row">
+            <label for="campo-password" class="form-label">Contraseña</label>
+            <input
+              id="campo-password"
+              name="password"
+              class="form-input"
+              type="password"
+              minlength="6"
+              placeholder="Mínimo 6 caracteres"
+              autocomplete="new-password"
+            />
+          </div>
+
           <div class="form-actions">
             <button
               id="boton-agregar-usuario"
@@ -116,6 +134,7 @@
                 <th scope="col">#</th>
                 <th scope="col">Nombre</th>
                 <th scope="col">Email</th>
+                <th scope="col">Pwd</th>
                 <th scope="col">Acción</th>
               </tr>
             </thead>

@@ -1,1 +1,14 @@
-[]
+[
+    {
+        "nombre": "German",
+        "email": "german@g.com",
+        "password": "$2y$12$C.LCgfIbuVWUjZsS5VjlM.dq/NHCr70AjuvWpB4947ziJRNpMaZ9.",
+        "role": "admin"
+    },
+    {
+        "nombre": "User",
+        "email": "user@g.com",
+        "password": "$2y$12$C.LCgfIbuVWUjZsS5VjlM.dq/NHCr70AjuvWpB4947ziJRNpMaZ9.",
+        "role": "user"
+    }
+]
